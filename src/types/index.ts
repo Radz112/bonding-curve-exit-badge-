@@ -1,3 +1,5 @@
+import { BadgeColor } from '../config/constants';
+
 export interface CurveExitRequest {
   wallet: string;
   token: string;
@@ -6,17 +8,16 @@ export interface CurveExitRequest {
 export interface VenueScore {
   programId: string;
   score: number;
-  sources: string[]; // Where the match was found
+  sources: string[];
 }
 
 export interface SellDetection {
   signature: string;
   timestamp: number;
-  slot: number;
-  tokenDelta: number;        // Negative = sold
-  solDelta: number;          // Positive = received SOL
-  venueScores: VenueScore[]; // All detected venues with scores
-  winningVenue: VenueScore;  // Highest scoring venue
+  tokenDelta: number;
+  solDelta: number;
+  venueScores: VenueScore[];
+  winningVenue: VenueScore;
 }
 
 export interface CurveExitResult {
@@ -26,28 +27,14 @@ export interface CurveExitResult {
   exit_type: string;
   exit_venue: string;
   description: string;
-  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  confidence: Confidence;
   sell_signature: string;
   sell_timestamp: number;
-}
-
-export interface BadgeInput {
+  badge_color: BadgeColor;
   badge_title: string;
-  badge_color: 'red' | 'gold' | 'platinum';
-  exit_type: string;
-  exit_venue: string;
-  token_symbol: string;
-  wallet: string;
-  token: string;
-  sell_timestamp: number;
-  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
-export interface TokenMetadata {
-  symbol: string;
-  name: string;
-  decimals: number;
-}
+export type Confidence = 'HIGH' | 'MEDIUM' | 'LOW';
 
 export interface CachedResult {
   result: CurveExitResult;
@@ -62,7 +49,7 @@ export interface ApiResponse {
     token_symbol: string;
     exit_type: string;
     exit_venue: string;
-    confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+    confidence: Confidence;
     description: string;
     image_base64: string;
     pay_to_address: string;

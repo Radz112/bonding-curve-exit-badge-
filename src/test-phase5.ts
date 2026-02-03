@@ -19,6 +19,8 @@ async function test() {
       token: '7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr',
       sell_timestamp: 1700000000,
       confidence: v.confidence,
+      description: 'Test',
+      sell_signature: 'sig123',
     });
 
     if (!b64.startsWith('data:image/jpeg;base64,')) throw new Error(`${v.color} badge invalid`);

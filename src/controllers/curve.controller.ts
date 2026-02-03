@@ -1,20 +1,15 @@
 import { Request, Response } from 'express';
 import { analyzeCurveExit } from '../services/curve.service';
 import { generateBadge } from '../services/badge.service';
-import { hasCache, getCache, setCache, getCacheStats } from '../services/cache.service';
+import { getCache, setCache, getCacheStats } from '../services/cache.service';
 import { EXIT_REGISTRY, CONFIG } from '../config/constants';
-import { CurveExitRequest, ApiResponse, CachedResult } from '../types';
+import { CurveExitRequest, CurveExitResult, ApiResponse } from '../types';
 
 const REQUEST_TIMEOUT_MS = 25000;
+const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
-/**
- * GET /api/v1/solana/curve-exit
- * APIX402 registration validation endpoint.
- */
-export async function getCurveExit(_req: Request, res: Response) {
-  const stats = getCacheStats();
-
-  return res.status(200).json({
+export function getCurveExit(_req: Request, res: Response) {
+  return res.json({
     endpoint: '/api/v1/solana/curve-exit',
     version: 'v2',
     method: 'POST',
@@ -41,128 +36,80 @@ export async function getCurveExit(_req: Request, res: Response) {
       exit_type: e.exit_type,
       exit_venue: e.exit_venue,
     })),
-    cache_stats: stats,
+    cache_stats: getCacheStats(),
   });
 }
 
-/**
- * POST /api/v1/solana/curve-exit
- * Main API endpoint — called by APIX402 after payment.
- * NO payment middleware — payment handled by APIX402 gateway.
- */
 export async function postCurveExit(req: Request, res: Response) {
   try {
-    // ─── APIX402 Nested Body Extraction ────────────────────────────────────
     const nestedBody = req.body?.body || req.body;
     const payload: CurveExitRequest =
       typeof nestedBody === 'string' ? JSON.parse(nestedBody) : nestedBody;
 
-    // ─── Validation ────────────────────────────────────────────────────────
-    if (!payload.wallet || typeof payload.wallet !== 'string' || payload.wallet.length < 32) {
+    if (!payload.wallet || !BASE58_RE.test(payload.wallet)) {
       return res.status(400).json({
         status: 'error',
-        error: 'Missing or invalid "wallet" — must be a valid Solana address',
-      } as ApiResponse);
+        error: 'Missing or invalid "wallet" — must be a base58-encoded Solana address (32-44 chars)',
+      });
     }
-    if (!payload.token || typeof payload.token !== 'string' || payload.token.length < 32) {
+    if (!payload.token || !BASE58_RE.test(payload.token)) {
       return res.status(400).json({
         status: 'error',
-        error: 'Missing or invalid "token" — must be a valid token mint address',
-      } as ApiResponse);
+        error: 'Missing or invalid "token" — must be a base58-encoded token mint address (32-44 chars)',
+      });
     }
 
-    // ─── Cache Check ───────────────────────────────────────────────────────
-    if (hasCache(payload.wallet, payload.token)) {
-      const cached = getCache(payload.wallet, payload.token)!;
-      return res.status(200).json({
-        status: 'success',
-        cached: true,
-        data: {
-          wallet: cached.result.wallet,
-          token_symbol: cached.result.token_symbol,
-          exit_type: cached.result.exit_type,
-          exit_venue: cached.result.exit_venue,
-          confidence: cached.result.confidence,
-          description: cached.result.description,
-          image_base64: cached.badge_base64,
-          pay_to_address: CONFIG.PAY_TO_ADDRESS,
-          sell_signature: cached.result.sell_signature,
-          sell_timestamp: new Date(cached.result.sell_timestamp * 1000).toISOString(),
-        },
-      } as ApiResponse);
+    const cached = getCache(payload.wallet, payload.token);
+    if (cached) {
+      return res.json(formatResponse(cached.result, cached.badge_base64, true));
     }
 
-    // ─── Core Logic with Timeout ───────────────────────────────────────────
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Request timed out after 25s')), REQUEST_TIMEOUT_MS)
-    );
+    let timeoutHandle: NodeJS.Timeout;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error('Request timed out after 25s')), REQUEST_TIMEOUT_MS);
+    });
 
     const exitResult = await Promise.race([
       analyzeCurveExit(payload),
       timeoutPromise,
-    ]);
+    ]).finally(() => clearTimeout(timeoutHandle!));
 
-    // ─── Badge Generation ──────────────────────────────────────────────────
-    const exitInfoKey = Object.keys(EXIT_REGISTRY).find(
-      k => EXIT_REGISTRY[k]?.exit_type === exitResult.exit_type
-    );
-    const exitInfo = exitInfoKey ? EXIT_REGISTRY[exitInfoKey] : null;
+    const badgeBase64 = await generateBadge(exitResult);
 
-    if (!exitInfo) {
-      return res.status(500).json({
-        status: 'error',
-        error: `Unable to map exit type: ${exitResult.exit_type}`,
-      } as ApiResponse);
-    }
-
-    const badgeBase64 = await generateBadge({
-      badge_title: exitInfo.badge_title,
-      badge_color: exitInfo.badge_color,
-      exit_type: exitResult.exit_type,
-      exit_venue: exitResult.exit_venue,
-      token_symbol: exitResult.token_symbol,
-      wallet: exitResult.wallet,
-      token: exitResult.token,
-      sell_timestamp: exitResult.sell_timestamp,
-      confidence: exitResult.confidence,
-    });
-
-    // ─── Store in Cache (Immutable) ────────────────────────────────────────
-    const cachedData: CachedResult = {
+    setCache(payload.wallet, payload.token, {
       result: exitResult,
       badge_base64: badgeBase64,
       cached_at: Date.now(),
-    };
-    setCache(payload.wallet, payload.token, cachedData);
+    });
 
-    // ─── Response ──────────────────────────────────────────────────────────
-    return res.status(200).json({
-      status: 'success',
-      cached: false,
-      data: {
-        wallet: exitResult.wallet,
-        token_symbol: exitResult.token_symbol,
-        exit_type: exitResult.exit_type,
-        exit_venue: exitResult.exit_venue,
-        confidence: exitResult.confidence,
-        description: exitResult.description,
-        image_base64: badgeBase64,
-        pay_to_address: CONFIG.PAY_TO_ADDRESS,
-        sell_signature: exitResult.sell_signature,
-        sell_timestamp: new Date(exitResult.sell_timestamp * 1000).toISOString(),
-      },
-    } as ApiResponse);
+    return res.json(formatResponse(exitResult, badgeBase64, false));
 
   } catch (err: any) {
-    console.error(`[curve-exit] Error: ${err.message}`);
+    console.error(`[curve-exit] ${err.message}`);
 
     const statusCode =
       err.message.includes('No sell transaction') ? 404 :
       err.message.includes('timed out') ? 504 : 500;
 
-    return res.status(statusCode).json({
-      status: 'error',
-      error: err.message,
-    } as ApiResponse);
+    return res.status(statusCode).json({ status: 'error', error: err.message });
   }
+}
+
+function formatResponse(result: CurveExitResult, badge: string, cached: boolean): ApiResponse {
+  return {
+    status: 'success',
+    cached,
+    data: {
+      wallet: result.wallet,
+      token_symbol: result.token_symbol,
+      exit_type: result.exit_type,
+      exit_venue: result.exit_venue,
+      confidence: result.confidence,
+      description: result.description,
+      image_base64: badge,
+      pay_to_address: CONFIG.PAY_TO_ADDRESS,
+      sell_signature: result.sell_signature,
+      sell_timestamp: new Date(result.sell_timestamp * 1000).toISOString(),
+    },
+  };
 }
