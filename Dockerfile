@@ -11,10 +11,11 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --include=dev
 COPY tsconfig.json ./
 COPY src/ ./src/
 RUN npx tsc
+RUN npm prune --omit=dev
 
 EXPOSE 3000
 CMD ["node", "dist/server.js"]
