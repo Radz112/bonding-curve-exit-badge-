@@ -1,14 +1,13 @@
 let createCanvasFn: (w: number, h: number) => any;
 try {
-  const napi = require('@napi-rs/canvas');
-  createCanvasFn = napi.createCanvas;
-} catch {
+  createCanvasFn = require('@napi-rs/canvas').createCanvas;
+} catch (e: any) {
+  console.warn(`[badge] @napi-rs/canvas unavailable: ${e.message}`);
   try {
-    const skia = require('skia-canvas');
-    createCanvasFn = (w: number, h: number) => new skia.Canvas(w, h);
-  } catch {
-    const nodeCanvas = require('canvas');
-    createCanvasFn = nodeCanvas.createCanvas;
+    createCanvasFn = require('canvas').createCanvas;
+  } catch (e2: any) {
+    console.error(`[badge] canvas also unavailable: ${e2.message}`);
+    createCanvasFn = () => { throw new Error('No canvas library available'); };
   }
 }
 

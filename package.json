@@ -14,6 +14,7 @@
   "dependencies": {
     "@napi-rs/canvas": "^0.1.89",
     "axios": "^1.13.4",
+    "canvas": "^3.2.1",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "node-cache": "^5.1.2"
