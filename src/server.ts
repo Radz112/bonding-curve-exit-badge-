@@ -8,8 +8,8 @@ if (!CONFIG.HELIUS_API_KEY) {
   console.warn('[curve-exit-badge] HELIUS_API_KEY is not set — all Helius requests will fail');
 }
 
-const server = app.listen(CONFIG.PORT, () => {
-  console.log(`[curve-exit-badge] running on port ${CONFIG.PORT}`);
+const server = app.listen(CONFIG.PORT, '0.0.0.0', () => {
+  console.log(`[curve-exit-badge] running on 0.0.0.0:${CONFIG.PORT}`);
 });
 
 server.on('error', (err: NodeJS.ErrnoException) => {
