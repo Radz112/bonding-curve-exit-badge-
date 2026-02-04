@@ -6,7 +6,6 @@ import {
   ATTRIBUTION_WEIGHTS,
   CONFIDENCE_LEVELS,
   USDC_MINT,
-  WSOL_MINT,
 } from '../config/constants';
 import { CurveExitRequest, CurveExitResult, Confidence, SellDetection, VenueScore } from '../types';
 import { fetchTokenSymbol } from './metadata.service';
@@ -72,9 +71,13 @@ export function detectSell(tx: any, wallet: string, targetToken: string): SellDe
   if (tokenDelta >= 0) return null;
 
   const solDelta = getSolDelta(tx, wallet);
-  const wsolDelta = getTokenDelta(tx, wallet, WSOL_MINT);
-  const usdcDelta = getTokenDelta(tx, wallet, USDC_MINT);
-  if (solDelta <= 0 && wsolDelta <= 0 && usdcDelta <= 0) return null;
+  const isSwap = tx.type === 'SWAP';
+  // DEX swaps route value through intermediate accounts (wSOL wrapping, etc.)
+  // so direct SOL/USDC inflow may not be visible. Trust Helius SWAP classification.
+  if (solDelta <= 0 && !isSwap) {
+    const usdcDelta = getTokenDelta(tx, wallet, USDC_MINT);
+    if (usdcDelta <= 0) return null;
+  }
 
   const venueScores = scoreVenues(tx);
   if (venueScores.length === 0) return null;

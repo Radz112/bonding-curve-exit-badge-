@@ -321,8 +321,9 @@ function testDetectSell() {
   });
   assert(detectSell(txZero, WALLET, TOKEN) === null, 'skips zero delta');
 
-  // Skips when no SOL/USDC inflow (negative SOL, no USDC)
+  // Skips non-SWAP with no SOL/USDC inflow
   const txNoInflow = makeTx({
+    type: 'TRANSFER',
     accountData: [{
       account: WALLET,
       nativeBalanceChange: -5000,
@@ -333,7 +334,7 @@ function testDetectSell() {
       }],
     }],
   });
-  assert(detectSell(txNoInflow, WALLET, TOKEN) === null, 'skips no inflow');
+  assert(detectSell(txNoInflow, WALLET, TOKEN) === null, 'skips no inflow on non-SWAP');
 
   // Skips when no venue can be attributed
   const txNoVenue = makeTx({
